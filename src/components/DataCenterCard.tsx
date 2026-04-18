@@ -34,10 +34,20 @@ export function DataCenterCard({ dc, onViewStats }: Props) {
             <p className="line-clamp-3">{dc.sustainability_steps}</p>
           </div>
         )}
-        <div className="mt-auto pt-2">
+        <div className="mt-auto pt-2 flex flex-col gap-2">
           <Button onClick={() => onViewStats(dc)} className="w-full" size="sm">
             View Stats
           </Button>
+          {dc.sustainability_url && dc.sustainability_url !== "N/A" && (
+            
+            <a href={dc.sustainability_url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-xs text-center text-primary hover:underline"
+            >
+              Learn more about their sustainability efforts →
+            </a>
+          )}
         </div>
       </CardContent>
     </Card>

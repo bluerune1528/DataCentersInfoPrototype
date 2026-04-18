@@ -2,6 +2,25 @@ const TAVILY_API_KEY = import.meta.env.VITE_TAVILY_API_KEY as string;
 const JINA_API_KEY = import.meta.env.VITE_JINA_API_KEY as string;
 const GROQ_API_KEY = import.meta.env.VITE_GROQ_API_KEY as string;
 
+const SUSTAINABILITY_URLS: Record<string, string> = {
+  google: "https://sustainability.google/reports/",
+  microsoft: "https://microsoft.com/en-us/sustainability",
+  meta: "https://sustainability.fb.com",
+  amazon: "https://sustainability.aboutamazon.com",
+  aws: "https://sustainability.aboutamazon.com",
+  apple: "https://www.apple.com/environment/",
+  ibm: "https://www.ibm.com/impact/environment",
+  oracle: "https://www.oracle.com/corporate/citizenship/environment/",
+};
+
+function getSustainabilityUrl(query: string): string | null {
+  const q = query.toLowerCase();
+  for (const [key, url] of Object.entries(SUSTAINABILITY_URLS)) {
+    if (q.includes(key)) return url;
+  }
+  return null;
+}
+
 async function tavilySearch(query: string): Promise<string[]> {
   const res = await fetch("https://api.tavily.com/search", {
     method: "POST",
@@ -27,7 +46,7 @@ async function jinaRead(url: string): Promise<string> {
   }
 }
 
-async function llmExtract(rawText: string, query: string): Promise<DataCenterResult[]> {
+async function llmExtract(rawText: string, query: string, sustainabilityUrl: string | null): Promise<DataCenterResult[]> {
   const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
     method: "POST",
     headers: {
@@ -40,7 +59,7 @@ async function llmExtract(rawText: string, query: string): Promise<DataCenterRes
         {
           role: "system",
           content: `You are a data extraction assistant. Extract data center information ONLY for "${query}" from the provided text.
-Return ONLY a JSON array with up to 10 unique objects. No duplicates — each object must have a different name and location.
+Return ONLY a JSON array with up to 10 unique objects. No duplicates — each must have a different name and location.
 Each object must have these exact fields:
 {
   "name": string (specific name like "Google Council Bluffs" not just "Google Data Center"),
@@ -50,7 +69,8 @@ Each object must have these exact fields:
   "water_consumption": string (include units, e.g. "1.3 billion gallons/year"),
   "electricity_consumption": string (include units, e.g. "9 TWh/year"),
   "pollution": string (carbon output with units),
-  "sustainability_steps": string (specific steps taken)
+  "sustainability_steps": string (specific steps taken by this data center),
+  "sustainability_url": string (use "${sustainabilityUrl ?? ""}" if available, otherwise find the most relevant official sustainability page URL for this company)
 }
 Only include data centers whose company matches "${query}". If a field is truly unknown use "N/A".
 Return ONLY the JSON array, no explanation, no markdown.`,
@@ -82,14 +102,19 @@ export interface DataCenterResult {
   electricity_consumption: string;
   pollution: string;
   sustainability_steps: string;
+  sustainability_url: string;
 }
 
 export async function searchDataCenters(query: string): Promise<DataCenterResult[]> {
   try {
+    const sustainabilityUrl = getSustainabilityUrl(query);
     const urls = await tavilySearch(query);
-    const texts = await Promise.all(urls.slice(0, 5).map(jinaRead));
+
+    // Add official sustainability page to the fetch list if available
+    const fetchUrls = sustainabilityUrl ? [sustainabilityUrl, ...urls.slice(0, 4)] : urls.slice(0, 5);
+    const texts = await Promise.all(fetchUrls.map(jinaRead));
     const combined = texts.join("\n\n");
-    const results = await llmExtract(combined, query);
+    const results = await llmExtract(combined, query, sustainabilityUrl);
 
     // Deduplicate by name
     const seen = new Set<string>();
