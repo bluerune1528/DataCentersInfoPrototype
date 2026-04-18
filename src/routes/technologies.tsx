@@ -17,7 +17,7 @@ const TECHS = [
   {
     name: "Immersion Cooling",
     desc: "Servers are submerged in a non-conductive dielectric fluid that absorbs heat far more efficiently than air, cutting cooling energy by up to 90%.",
-    href: "https://en.wikipedia.org/wiki/Liquid_immersion_cooling",
+    href: "https://en.wikipedia.org/wiki/Immersion_cooling",
   },
   {
     name: "AI-Based Power Management",
