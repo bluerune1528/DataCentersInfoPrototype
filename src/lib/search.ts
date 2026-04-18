@@ -9,7 +9,7 @@ async function tavilySearch(query: string): Promise<string[]> {
     body: JSON.stringify({
       api_key: TAVILY_API_KEY,
       query: `${query} data center water consumption electricity pollution sustainability`,
-      max_results: 5,
+      max_results: 10,
     }),
   });
   const data = await res.json();
@@ -17,10 +17,14 @@ async function tavilySearch(query: string): Promise<string[]> {
 }
 
 async function jinaRead(url: string): Promise<string> {
-  const res = await fetch(`https://r.jina.ai/${url}`, {
-    headers: { Authorization: `Bearer ${JINA_API_KEY}` },
-  });
-  return res.text();
+  try {
+    const res = await fetch(`https://r.jina.ai/${url}`, {
+      headers: { Authorization: `Bearer ${JINA_API_KEY}` },
+    });
+    return res.text();
+  } catch {
+    return "";
+  }
 }
 
 async function llmExtract(rawText: string, query: string): Promise<DataCenterResult[]> {
@@ -35,25 +39,28 @@ async function llmExtract(rawText: string, query: string): Promise<DataCenterRes
       messages: [
         {
           role: "system",
-          content: `You are a data extraction assistant. Extract data center information from the provided text and return ONLY a JSON array with up to 10 objects. Each object must have these exact fields:
+          content: `You are a data extraction assistant. Extract data center information ONLY for "${query}" from the provided text.
+Return ONLY a JSON array with up to 10 unique objects. No duplicates — each object must have a different name and location.
+Each object must have these exact fields:
 {
-  "name": string,
-  "company": string,
+  "name": string (specific name like "Google Council Bluffs" not just "Google Data Center"),
+  "company": string (must match or relate to "${query}"),
   "country": string,
-  "location": string,
-  "water_consumption": string,
-  "electricity_consumption": string,
-  "pollution": string,
-  "sustainability_steps": string
+  "location": string (city and state/region),
+  "water_consumption": string (include units, e.g. "1.3 billion gallons/year"),
+  "electricity_consumption": string (include units, e.g. "9 TWh/year"),
+  "pollution": string (carbon output with units),
+  "sustainability_steps": string (specific steps taken)
 }
-If a field is unknown, use "N/A". Return ONLY the JSON array, no explanation.`,
+Only include data centers whose company matches "${query}". If a field is truly unknown use "N/A".
+Return ONLY the JSON array, no explanation, no markdown.`,
         },
         {
           role: "user",
-          content: `Query: "${query}"\n\nText:\n${rawText.slice(0, 6000)}`,
+          content: `Query: "${query}"\n\nText:\n${rawText.slice(0, 8000)}`,
         },
       ],
-      temperature: 0.2,
+      temperature: 0.1,
     }),
   });
   const data = await res.json();
@@ -80,10 +87,18 @@ export interface DataCenterResult {
 export async function searchDataCenters(query: string): Promise<DataCenterResult[]> {
   try {
     const urls = await tavilySearch(query);
-    const texts = await Promise.all(urls.slice(0, 3).map(jinaRead));
+    const texts = await Promise.all(urls.slice(0, 5).map(jinaRead));
     const combined = texts.join("\n\n");
     const results = await llmExtract(combined, query);
-    return results;
+
+    // Deduplicate by name
+    const seen = new Set<string>();
+    return results.filter((dc) => {
+      const key = dc.name.toLowerCase().trim();
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
   } catch (err) {
     console.error("Search pipeline error:", err);
     return [];
